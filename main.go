@@ -1,12 +1,34 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"time"
 )
+
+type VIACepResponse struct {
+	Cep         string `json:"cep"`
+	Logradouro  string `json:"logradouro"`
+	Complemento string `json:"complemento"`
+	Bairro      string `json:"bairro"`
+	Localidade  string `json:"localidade"`
+	Uf          string `json:"uf"`
+	Ibge        string `json:"ibge"`
+	Gia         string `json:"gia"`
+	Ddd         string `json:"ddd"`
+	Siafi       string `json:"siafi"`
+}
+
+type BrasilAPIResponse struct {
+	Cep          string `json:"cep"`
+	State        string `json:"state"`
+	City         string `json:"city"`
+	Neighborhood string `json:"neighborhood"`
+	Street       string `json:"street"`
+	Service      string `json:"service"`
+}
 
 func main() {
 
@@ -17,21 +39,24 @@ func main() {
 
 	cep := os.Args[1]
 
+	viaCepResponse := VIACepResponse{}
+	brazilAPIResponse := BrasilAPIResponse{}
+
 	uriViacep := fmt.Sprintf("http://viacep.com.br/ws/%s/json/", cep)
 	uriBrazilapi := fmt.Sprintf("https://brasilapi.com.br/api/cep/v1/%s", cep)
 
-	channelViacep := make(chan string)
-	channelBrazilapi := make(chan string)
+	channelViacep := make(chan interface{})
+	channelBrazilapi := make(chan interface{})
 
-	go execute(uriViacep, channelViacep)
-	go execute(uriBrazilapi, channelBrazilapi)
+	go execute(uriViacep, channelViacep, &viaCepResponse)
+	go execute(uriBrazilapi, channelBrazilapi, &brazilAPIResponse)
 
 	select {
 	case msg := <-channelViacep:
-		fmt.Print(msg)
+		fmt.Printf("A API mais rapida foi a VIACep, e o retorno foi %s", msg)
 
 	case msg := <-channelBrazilapi:
-		fmt.Print(msg)
+		fmt.Printf("A API mais rapida foi a BrazilAPI, e o retorno foi %s", msg)
 
 	case <-time.After(time.Second):
 		fmt.Printf("Nenhuma das apis respondeu no tempo configurado")
@@ -39,18 +64,19 @@ func main() {
 
 }
 
-func execute(uri string, ch chan string) {
+func execute(uri string, ch chan interface{}, responseInterface interface{}) {
 	req, err := http.Get(uri)
 	if err != nil {
 		fmt.Printf("Erro ao realizar consulta na url %s", uri)
 		panic(err)
 	}
 	defer req.Body.Close()
-	res, err := io.ReadAll(req.Body)
-	if err != nil {
-		fmt.Printf("Erro ao realizar consulta na url %s", uri)
 
+	err = json.NewDecoder(req.Body).Decode(&responseInterface)
+	if err != nil {
+		fmt.Printf("Erro ao decodificar JSON da URL %s", uri)
 		panic(err)
 	}
-	ch <- string(res)
+
+	ch <- responseInterface
 }
